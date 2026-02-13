@@ -1,77 +1,135 @@
-Lab Report: Deploying a WireGuard VPN on AWS EC2 (Ubuntu)
-📋 Overview
-This lab documents the end-to-end setup and troubleshooting of a high-performance WireGuard VPN on an Amazon EC2 (Ubuntu 24.04/22.04 LTS) instance. This project involved migrating and fixing a deployment script originally designed for Amazon Linux.
+# 🚀 Lab Report: Deploying WireGuard VPN on AWS EC2 (Ubuntu)
 
-Source Repository: pprometey/wireguard_aws
+## 📋 Overview
 
-Goal: Establish a secure UDP tunnel for all internet traffic from a Windows 11 client through an AWS-backed gateway.
+This lab documents the end-to-end deployment and troubleshooting of a high-performance WireGuard VPN on an AWS EC2 instance running Ubuntu 24.04 / 22.04 LTS.
 
-🏗️ Architecture
-Server: AWS EC2 t3.micro (Ubuntu)
+The original deployment script was designed for Amazon Linux and required manual adaptation for Ubuntu.
 
-Client: Windows 11 WireGuard Client
+- **Source Repository:** https://github.com/pprometey/wireguard_aws  
+- **Goal:** Establish a secure UDP tunnel routing all internet traffic from a Windows 11 client through an AWS-backed gateway.
 
-VPN Subnet: 10.50.0.0/24
+---
 
-Listening Port: UDP 54321
+## 🏗️ Architecture
 
-🛠️ Implementation Steps
-1. Environment Correction
-The original install.sh from the cloned repository utilized dnf and yum. For Ubuntu, the environment was manually prepared:
+| Component | Details |
+|------------|----------|
+| **Server** | AWS EC2 `t3.micro` (Ubuntu 22.04/24.04 LTS) |
+| **Client** | Windows 11 WireGuard Client |
+| **VPN Subnet** | `10.50.0.0/24` |
+| **Listening Port** | UDP `54321` |
 
-Bash
-sudo apt update && sudo apt install wireguard iptables -y
-2. Manual Key & Directory Management
-Since the automated scripts failed to create directories with correct permissions, the following manual steps were taken:
+---
 
-Bash
-# Generate server identity
-wg genkey | sudo tee /etc/wireguard/server_private.key
-cat /etc/wireguard/server_private.key | wg pubkey | sudo tee /etc/wireguard/server_public.key
+Here is a cleaner, more structured, GitHub-ready version of your Implementation Steps section only.
 
-# Prepare client directory
+You can replace your current section with this:
+
+## 🛠️ Implementation Steps
+
+The deployment was completed in four structured phases:
+
+---
+
+### Phase 1 — System Preparation (Ubuntu Environment Fix)
+
+The original repository was written for Amazon Linux and relied on `dnf`/`yum`.  
+Since the target instance was Ubuntu 22.04/24.04 LTS, dependencies were installed manually.
+
+#### Install Required Packages
+
+```bash
+sudo apt update
+sudo apt install wireguard iptables -y
+
+
+This ensures:
+
+WireGuard kernel module support
+
+Userspace tools (wg, wg-quick)
+
+NAT functionality via iptables
+
+Phase 2 — Cryptographic Key Generation & Directory Setup
+
+The automation script failed before generating keys. Server identity was created manually.
+
+Generate Server Keys
+sudo mkdir -p /etc/wireguard
+cd /etc/wireguard
+
+wg genkey | sudo tee server_private.key
+cat server_private.key | wg pubkey | sudo tee server_public.key
+
+
+🔒 Ensure private key permissions are restricted:
+
+sudo chmod 600 server_private.key
+
+Prepare Client Directory
 sudo mkdir -p /etc/wireguard/clients
-3. Gateway Configuration (/etc/wireguard/wg0.conf)
-We configured the interface to handle traffic routing and NAT. Critical Fix: The WAN interface was identified as ens5 (or eth0) to ensure iptables rules applied to the correct hardware.
 
-Ini, TOML
+
+This directory stores individual client configurations.
+
+Phase 3 — WireGuard Interface Configuration
+
+The main configuration file was created at:
+
+/etc/wireguard/wg0.conf
+
+Server Configuration
 [Interface]
 Address = 10.50.0.1/24
 SaveConfig = true
 ListenPort = 54321
 PrivateKey = <Server_Private_Key>
 
-# NAT Masquerading for Internet access
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE
-4. Kernel Routing
-Enabled IPv4 forwarding to allow the server to act as a router:
+# Enable NAT for outbound internet access
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; \
+         iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE
 
-Bash
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; \
+           iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE
+
+Critical Configuration Notes
+
+ens5 is the AWS EC2 WAN interface (verify using ip a)
+
+NAT masquerading is required to route client traffic to the internet
+
+Incorrect interface naming will result in handshake success but no data return
+
+Phase 4 — Enable Kernel IP Forwarding
+
+By default, Ubuntu does not forward packets.
+The server must be configured to act as a router.
+
+Temporarily Enable IP Forwarding
 sudo sysctl -w net.ipv4.ip_forward=1
+
+Make It Persistent Across Reboots
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
-⚠️ Challenges & Debugging Log
-❌ The "Identity Crisis" (OS Mismatch)
-Challenge: The cloned repo scripts used apt commands while running on an instance where the user expected dnf, and vice-versa.
 
-Fix: Abandoned the automated initial.sh and performed a manual install via apt.
+Phase 5 — Start and Enable WireGuard
 
-❌ The "Silent Failure" (Empty Keys)
-Challenge: systemd reported Configuration parsing error.
+Once configuration was complete:
 
-Investigation: Found that wg0.conf had an empty PrivateKey =  field because the script crashed before writing the variable.
+sudo systemctl enable wg-quick@wg0
+sudo systemctl start wg-quick@wg0
 
-Fix: Manually injected the generated key using nano.
+Verify Tunnel Status
+sudo wg
 
-❌ The "One-Way Tunnel" (No Internet)
-Challenge: Handshake was successful (188 B received), but no data was returned to the client.
 
-Fix: Identified that IP Forwarding was disabled and the PostUp rules were targeting the wrong interface name.
+Expected output should show:
 
-❌ The "Netflix Wall" (Commercial Blocks)
-Challenge: Streaming services (Netflix) detected the connection.
+Interface wg0
 
-Lesson: AWS IP ranges are flagged as "Data Center" IPs. While the VPN is technically perfect, commercial streaming services actively block these ranges to enforce geo-restrictions.
+Listening port 54321
 
-🏁 Conclusion
-The project successfully demonstrated that while WireGuard is simple to configure, cloud-specific hurdles (Security Groups, IP Forwarding, and WAN Interface naming) are the primary points of failure. The deployment is now a fully functional, secure gateway.
+Peer handshake timestamps
+
+Data transfer counters increasing
