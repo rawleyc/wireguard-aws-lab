@@ -22,10 +22,6 @@ The original deployment script was designed for Amazon Linux and required manual
 
 ---
 
-Here is a cleaner, more structured, GitHub-ready version of your Implementation Steps section only.
-
-You can replace your current section with this:
-
 ## 🛠️ Implementation Steps
 
 The deployment was completed in four structured phases:
@@ -42,45 +38,54 @@ Since the target instance was Ubuntu 22.04/24.04 LTS, dependencies were installe
 ```bash
 sudo apt update
 sudo apt install wireguard iptables -y
-
+```
 
 This ensures:
+- WireGuard kernel module support
+- Userspace tools (wg, wg-quick)
+- NAT functionality via iptables
 
-WireGuard kernel module support
+---
 
-Userspace tools (wg, wg-quick)
-
-NAT functionality via iptables
-
-Phase 2 — Cryptographic Key Generation & Directory Setup
+### Phase 2 — Cryptographic Key Generation & Directory Setup
 
 The automation script failed before generating keys. Server identity was created manually.
 
-Generate Server Keys
+#### Generate Server Keys
+
+```bash
 sudo mkdir -p /etc/wireguard
 cd /etc/wireguard
 
 wg genkey | sudo tee server_private.key
 cat server_private.key | wg pubkey | sudo tee server_public.key
-
+```
 
 🔒 Ensure private key permissions are restricted:
 
+```bash
 sudo chmod 600 server_private.key
+```
 
-Prepare Client Directory
+#### Prepare Client Directory
+
+```bash
 sudo mkdir -p /etc/wireguard/clients
-
+```
 
 This directory stores individual client configurations.
 
-Phase 3 — WireGuard Interface Configuration
+---
+
+### Phase 3 — WireGuard Interface Configuration
 
 The main configuration file was created at:
 
-/etc/wireguard/wg0.conf
+`/etc/wireguard/wg0.conf`
 
-Server Configuration
+#### Server Configuration
+
+```conf
 [Interface]
 Address = 10.50.0.1/24
 SaveConfig = true
@@ -93,43 +98,52 @@ PostUp = iptables -A FORWARD -i %i -j ACCEPT; \
 
 PostDown = iptables -D FORWARD -i %i -j ACCEPT; \
            iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE
+```
 
-Critical Configuration Notes
+#### Critical Configuration Notes
 
-ens5 is the AWS EC2 WAN interface (verify using ip a)
+- `ens5` is the AWS EC2 WAN interface (verify using `ip a`)
+- NAT masquerading is required to route client traffic to the internet
+- Incorrect interface naming will result in handshake success but no data return
 
-NAT masquerading is required to route client traffic to the internet
+---
 
-Incorrect interface naming will result in handshake success but no data return
-
-Phase 4 — Enable Kernel IP Forwarding
+### Phase 4 — Enable Kernel IP Forwarding
 
 By default, Ubuntu does not forward packets.
 The server must be configured to act as a router.
 
-Temporarily Enable IP Forwarding
+#### Temporarily Enable IP Forwarding
+
+```bash
 sudo sysctl -w net.ipv4.ip_forward=1
+```
 
-Make It Persistent Across Reboots
+#### Make It Persistent Across Reboots
+
+```bash
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
+```
 
-Phase 5 — Start and Enable WireGuard
+---
+
+### Phase 5 — Start and Enable WireGuard
 
 Once configuration was complete:
 
+```bash
 sudo systemctl enable wg-quick@wg0
 sudo systemctl start wg-quick@wg0
+```
 
-Verify Tunnel Status
+#### Verify Tunnel Status
+
+```bash
 sudo wg
-
+```
 
 Expected output should show:
-
-Interface wg0
-
-Listening port 54321
-
-Peer handshake timestamps
-
-Data transfer counters increasing
+- Interface wg0
+- Listening port 54321
+- Peer handshake timestamps
+- Data transfer counters increasing
